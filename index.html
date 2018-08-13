@@ -1,0 +1,371 @@
+    <!DOCTYPE html>
+<html lang='en'>
+
+<head>
+  <meta charset="utf-8">
+
+  <link rel="stylesheet" href="http://netdna.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+  <link rel="stylesheet" href="http://netdna.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap-theme.min.css">
+  <link rel="stylesheet" href="http://veg.github.io/phylotree.js/phylotree.css" >
+  <link rel="stylesheet" href="https://cdn.rawgit.com/openlayers/openlayers.github.io/master/en/v5.1.3/css/ol.css" type="text/css">
+
+  <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8=" crossorigin="anonymous"></script>
+  <!-- enough the previous? <script src="http://code.jquery.com/jquery.js"></script>//-->
+
+  <script src="http://netdna.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+  <script src="http://d3js.org/d3.v3.min.js"></script>
+  <script src="http://phylotree.hyphy.org/phylotree.js"></script>
+
+  <!-- is the previous enough? <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>//-->
+
+  <script src="https://cdn.rawgit.com/openlayers/openlayers.github.io/master/en/v5.1.3/build/ol.js"></script>
+  <script src='https://npmcdn.com/@turf/turf/turf.min.js'></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js" charset="utf-8"></script>
+
+  <!--Javascript with function for mapping, tree manipulation and fetching data from GBIF -->
+  <script src="map.js"></script>
+  <script src="tree.js"></script>
+  <script src="getGBIF.js"></script>
+  
+  <title>Mapping phylogenetic diversity with GBIF</title>
+</head>
+
+<style>
+textarea {
+    resize: none;
+}
+.simplecontainer {
+    margin: 5px;
+    width: auto;
+}
+.sectionContainer {
+    width: 100%;
+    height: 400px;
+    margin-top: 10px;
+}
+#map {
+    height: 400px;
+    width: 49%;
+    float: left;
+    background: #ededee;
+}
+#tree {
+    margin-left: 51%;
+    height: 400px;
+    background: #ededee;
+}
+#infoPointer {
+    z-index: 1;
+    opacity: 0;
+    position: absolute;
+    margin: 0;
+    background: rgba(0,60,136,0.7);
+    color: white;
+    border: 0;
+    transition: opacity 100ms ease-in;
+}
+.footer {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    text-align: center;
+}
+
+</style>
+
+<body>
+    <div class="container" role="main">
+        <div class="jumbotron">
+            <h1>Mapping phylogenetic diversity</h1>
+            <p>Upload your phylogenetic tree and map the phylogentic diversity with GBIF data.</p>
+        </div>
+
+        <div id="warningContainer"> </div>
+
+        <div class="btn-toolbar" role="group">
+
+            <div class="btn-group" role="group">
+
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+                        Browse tree <span class="caret"></span>
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li>Select your file:</li>
+                        <li><a href="#"><input type="file" id="newick_file"/></a></li>
+                    </ul>
+                </div>
+
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+                        Grid resolution <span class="caret"></span>
+                    </button>
+                    <ul class="dropdown-menu">
+                        Select resolution in km
+                        <div class="simplecontainer"><input type="range" min="1" max="100" value="25" id="resolution"></div>
+                        <a href="#"><div id="labelResolution" align="center"></div></a>
+                    </ul>
+                </div>
+
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+                        Spatial extent <span class="caret"></span>
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a href="#" id="getmapextent">Get from map view</a></li>
+                        <li role="separator" class="divider"></li>
+                        <li>Define manually:</li>
+                        <li><textarea id='selectExtent' autofocus=t rows=1 class="simplecontainer">xmin,ymin,xmax,ymax</textarea></li>
+                    </ul>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-primary" id="mapit">Map It!</button>
+
+        </div>
+
+        <section class="sectionContainer">
+            <div id="map"><pre id="infoPointer"/></div>
+            <div id="tree"> <svg id="tree_display" width=100% height=100%></svg></div>
+        </section>
+
+
+    </div>
+
+    <footer class="footer">    
+      <p margin-top: 15px>There is an <a href="tree.zip">example tree</a> available to try this tool!</p>
+    </footer>
+
+</body>
+
+<script>
+var species = [];
+var extent = undefined;
+var maxPD = 1;
+// General UI events
+
+$("#labelResolution").html($("#resolution").val());
+
+$("#resolution").on ("input", function (e) {
+    var value = e.target.value;
+    if (value < 5) {
+      $("#labelResolution").html(value);
+    } else {
+      $("#labelResolution").html(value - value % 5);
+    }
+    
+});
+
+$("#getmapextent").on ("click", function() {
+    extent = getCurrentExtent();
+    $("#selectExtent").val(extent.join(","));
+});
+
+$("#mapit").on ("click", function() {
+    extent = JSON.parse("[" + $("#selectExtent").val() + "]");
+    species = getTipNames();
+    speciesID = [];
+    resetOcc();
+    Promise.resolve()
+        .then(
+            function() {
+                console.group( "Getting species IDs and occurrence data" );
+            }
+        )
+        .then(function () {
+            // Alert for download time...
+            jQuery('<div/>', {
+                id: 'warn',
+                class: 'alert alert-warning',
+                html: '<strong>Downloading!</strong> Please wait until this warning message disappears to proceed.  '
+            }).appendTo("#warningContainer");
+            jQuery('<span/>', { id: 'warninfo' }).appendTo("#warn");
+            
+        })
+        .then(fetchAllTaxonID)
+        .then(fetchAllOccurences)
+        .then(
+            function() {
+                console.groupEnd();
+                console.log( "Got IDs for " + speciesID.length + " species.");
+                console.log("Got occurence data for " + occ.found.length + " species.");
+            }
+        )
+        .then(function() {
+            if (occ.notfound.length > 0) {
+                // Add a red label to tips without geospatial data
+                var missing = species[occ.notfound[0].id]
+                tree.style_nodes( function(e, d) {
+                    if (tree.is_leafnode(d) && d.name === missing) {
+                        e.style("fill", "#c0c0c0");
+                    }
+                });
+                tree.update();
+            }
+        })
+        .then( function() {$("#warn").remove()})
+        .then( function() {
+            var resolution = parseInt($("#labelResolution").html());
+            // Creates a square grid and calculates phylogenetic diversity per grid polygon
+            var sqgrid = turf.squareGrid(extent, resolution);
+            var col = collectData(sqgrid);
+            
+            // convert sci name to tree name 
+            var scinames = Array.from(speciesID, x => x.canonicalName);
+            maxPD = 0;
+            for (var i=0; i < col.features.length; i++) {
+                var spsIndex = Array.from(col.features[i].properties.species, x => scinames.indexOf(x));
+                var sps = Array.from(spsIndex, x => species[x]);
+                var pd = phyloDiv(sps);
+                col.features[i].properties.pd = pd;
+                if (pd > maxPD) {
+                    maxPD = pd;
+                }
+            }
+            
+            var source = turfToSource(col);
+            pdLayer.setSource(source);
+            pdLayer.setStyle(stylePD);
+            map.addLayer(pdLayer);
+        })
+
+});
+
+
+// Map display
+
+var map = new ol.Map({
+    target: 'map',
+    layers: [],
+    view: new ol.View({
+        projection: 'EPSG:4326',
+        center: [-3.5, 39.5],
+        zoom: 6
+    })
+});
+
+var osmSource = new ol.source.OSM({
+    projection: 'EPSG:4326'
+});
+
+var osmLayer = new ol.layer.Tile({
+    source: osmSource
+});
+
+map.addLayer(osmLayer);
+
+var pdLayer = new ol.layer.Vector();
+
+// update extent to default map extent
+extent = getCurrentExtent();
+$("#selectExtent").val(extent.join(","));
+
+
+// get the pixel position with every move
+var mousePosition = null;
+
+var mapContainer = document.getElementById('map')
+var infopt = document.getElementById('infoPointer')
+
+mapContainer.addEventListener('mousemove', function(event) {
+    mousePosition = map.getEventPixel(event);
+    map.render();
+});
+
+mapContainer.addEventListener('mouseout', function() {
+    mousePosition = null;
+    map.render();
+});
+
+
+pdLayer.on('postcompose', function(event) {
+    if (mousePosition) {
+        var context = event.context;
+        var pixelRatio = event.frameState.pixelRatio;
+        var centerX = mousePosition[0] * pixelRatio;
+        var centerY = mousePosition[1] * pixelRatio;
+    
+        var feature = map.forEachFeatureAtPixel([centerX, centerY], function(feature) {
+            return feature;
+        });
+
+        if (feature) {
+            infopt.innerHTML = 'PD: ' + Math.round(feature.get('pd')*1000)/1000;
+            var sps = feature.get('species');
+            // have to convert to tree names... maybe it is better to update tree names with GBIF scinames
+            var scinames = Array.from(speciesID, x => x.canonicalName);
+            var spsIndex = Array.from(sps, x => scinames.indexOf(x));
+            var sps = Array.from(spsIndex, x => species[x]);
+            selectUnodes(sps);
+        } else {
+            infopt.innerHTML = '';
+            infopt.style.opacity = 0;
+            selectUnodes(sps);
+        }
+        infopt.style.opacity = 1;
+        $("#infoPointer").css({left: centerX + mapContainer.offsetLeft, top: centerY + mapContainer.offsetTop});
+    } else {
+        infopt.innerHTML = "";
+        infopt.style.opacity = 0;
+        selectUnodes(sps);
+    }
+});
+
+
+
+// Tree display
+
+var treewidth = document.getElementById('tree').offsetWidth;
+
+var tree = d3.layout.phylotree("body")
+    .svg(d3.select("#tree_display"))
+    .align_tips (true)
+    .options({
+      'left-right-spacing': 'fit-to-size',
+      'top-bottom-spacing': 'fit-to-size',
+      'selectable': true,
+      'collapsible': false,
+      'show-scale': true,
+      'transitions': false
+    })
+    .size([400, treewidth])
+    .node_circle_size(5);
+
+
+$( window ).resize(function() {
+  var treewidth = document.getElementById('tree').offsetWidth;
+  tree.size([400, treewidth]);
+  tree.update();
+  tree.layout();
+});
+
+$("#newick_file").on ("change", function (e) {
+    var files = e.target.files;
+
+    if (files.length == 1) {
+        var f = files[0];
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          var res = d3.layout.newick_parser (e.target.result);
+          if (res["json"]) {
+            if (!("children" in res["json"])) {
+              res["error"] = "Empty tree";
+            }
+          }
+          if (res["error"]) {
+            alert("Cannot parse newick tree.");
+          } else {
+            tree(res).layout();
+          }
+        };
+        reader.readAsText(f);
+    }
+});
+
+
+
+
+
+</script>
