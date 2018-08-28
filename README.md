@@ -6,7 +6,7 @@ website.
 Phylogenetic diversity (PD) aims to describe the evolutionary history within an assemblage
 of species. This diversity metric is very different from other more common (as
 species richness) because it includes the evolutionary relationships between species.
-A low species richeness location, for instance, might harbor notable evolutionary 
+A low species richness location, for instance, might harbor notable evolutionary 
 histories that would be described by high values of PD. 
 
 The websites relies on the client-side processing for calculating the PD after 
@@ -38,6 +38,6 @@ to parse the tiles (with vector-tile.js, for instance).
 So, future versions will:
 
 * rely on GBIF Maps API
-* provide more diversity metrics related to the phylogenies (evolutionary distinctivness,
-phylogenetic endemicity, etc)
-* export results to a comon GIS format
+* provide more diversity metrics related to the phylogenies (evolutionary distinctiveness,
+phylogenetic endemism, etc)
+* export results to a common GIS format
